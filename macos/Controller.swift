@@ -6,6 +6,7 @@ import CoreGraphics
 @MainActor final class ConnectController: ObservableObject {
     @Published var snapshot = DDMMShared.read()
     @Published var busy = false
+    @Published var setupMessage = ""
     @Published var details = false
     @Published var comparison = false
     @Published var pin = ""
@@ -30,20 +31,46 @@ import CoreGraphics
     func call(_ command: String, values: [String:String] = [:]) async -> [String:Any] {
         guard let script = Bundle.main.url(forResource: "bridge", withExtension: "py") else { return ["ok":false,"error":"控制组件缺失"] }
         let arguments = [script.path,command,String(data:(try? JSONSerialization.data(withJSONObject: values)) ?? Data("{}".utf8),encoding:.utf8)!]
+        let runtime=NSHomeDirectory()+"/Library/Application Support/DDMM Connect/Runtime/python/bin/python3"
+        let executable=FileManager.default.isExecutableFile(atPath:runtime) ? runtime:"/usr/bin/python3"
+        if executable=="/usr/bin/python3" && !FileManager.default.fileExists(atPath:"/Applications/Xcode.app") && !FileManager.default.fileExists(atPath:"/Library/Developer/CommandLineTools") {return ["ok":false,"error":"请展开设置，点击一键安装与检查"]}
+        return await execute(executable,arguments:arguments)
+    }
+    func execute(_ executable:String,arguments:[String]) async -> [String:Any] {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                let process=Process(), output=Pipe(), errors=Pipe()
-                process.executableURL=URL(fileURLWithPath:"/usr/bin/python3")
-                process.arguments=arguments;process.standardOutput=output;process.standardError=errors
+                let process=Process(), output=Pipe()
+                process.executableURL=URL(fileURLWithPath:executable)
+                process.arguments=arguments;process.standardOutput=output;process.standardError=output
+                var environment=ProcessInfo.processInfo.environment;environment["PYTHONDONTWRITEBYTECODE"] = "1";process.environment=environment
                 do {
                     try process.run()
                     let data=output.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
-                    if let result=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any] { continuation.resume(returning:result) }
-                    else { continuation.resume(returning:["ok":false,"error":"控制组件未返回有效状态"]) }
+                    let lastLine=String(data:data,encoding:.utf8)?.split(separator:"\n").last.map(String.init) ?? ""
+                    if let result=(try? JSONSerialization.jsonObject(with:Data(lastLine.utf8))) as? [String:Any] { continuation.resume(returning:result) }
+                    else { continuation.resume(returning:["ok":false,"error":lastLine.isEmpty ? "控制组件未返回有效状态":String(lastLine.suffix(300))]) }
                 } catch { continuation.resume(returning:["ok":false,"error":error.localizedDescription]) }
             }
         }
+    }
+    func installAudio() async {
+        guard !busy,let script=Bundle.main.url(forResource:"bootstrap",withExtension:"sh") else{return}
+        busy=true;defer{busy=false}
+        let result=await execute("/bin/bash",arguments:[script.path,"--audio-only"])
+        setupMessage=result["message"] as? String ?? ""
+        if result["ok"] as? Bool != true{snapshot.error=result["error"] as? String ?? "安装未完成"}
+    }
+    func installDependencies() async {
+        guard !busy, let script=Bundle.main.url(forResource:"bootstrap",withExtension:"sh") else{return}
+        busy=true;setupMessage="正在安装与检查…";snapshot.error=""
+        let result=await execute("/bin/bash",arguments:[script.path,"--mode",snapshot.mode,"--tv",tv])
+        busy=false
+        if result["ok"] as? Bool == true {
+            setupMessage=result["message"] as? String ?? "安装检查完成"
+            UserDefaults.standard.set(tv,forKey:"tv")
+            if !snapshot.owned{await connect(snapshot.mode)}
+        } else {setupMessage="";snapshot.error=result["error"] as? String ?? "安装未完成"}
     }
     private func metric(_ result:[String:Any], _ key:String, _ unit:String) -> String {
         guard let number=result[key] as? NSNumber else { return "—" }
@@ -75,7 +102,7 @@ import CoreGraphics
             if snapshot.mode=="hdmi" { snapshot.phase=hdmiOriginal == nil ? "hdmi-ready" : "hdmi-active" }
         } else if snapshot.mode=="hdmi" { snapshot.phase="no-cable" }
         snapshot.status=["idle":"未连接","starting":"连接中","waiting":"等待接收端","streaming":"串流已建立","permission":"待授权","error":"连接异常","hdmi":"检查接线","hdmi-ready":"HDMI 已接入","hdmi-active":"扩展已开启","no-cable":"未接线"][snapshot.phase] ?? snapshot.phase
-        if snapshot.mode=="opendisplay" { snapshot.sound="Mac" }
+        if snapshot.mode=="opendisplay" { snapshot.sound="Mac";audio="mac" }
         if snapshot.isActive && audio=="tv" {
             if let device=snapshot.mode=="sunshine" ? AudioRouter.loopback : (snapshot.mode=="hdmi" ? AudioRouter.television:nil) {
                 do{try AudioRouter.route(device)}catch{snapshot.error=error.localizedDescription}
@@ -107,7 +134,7 @@ import CoreGraphics
         restoreHDMI()
         baseline=Set(NSScreen.screens.map(id));targetID=nil
         UserDefaults.standard.set(tv,forKey:"tv")
-        snapshot.error="";snapshot.status="连接中"
+        snapshot.error="";snapshot.status="连接中";snapshot.mode=mode
         let result=await call("connect",values:["mode":mode,"tv":tv,"audio":audio]);apply(result)
         if result["ok"] as? Bool == true {
             if mode=="hdmi" { configureHDMI() }
@@ -188,55 +215,39 @@ struct ConnectView: View {
     @ObservedObject var model:ConnectController
     private let red=Color(red:0.94,green:0.29,blue:0.42)
     var body:some View {
-        VStack(alignment:.leading,spacing:18){
-            HStack(alignment:.top){VStack(alignment:.leading,spacing:6){Text("客厅电视").font(.title2.weight(.semibold));Text("SONY XR-75X95EK · 75″").font(.caption).foregroundStyle(.secondary)};Spacer();HStack(spacing:5){Circle().fill(model.snapshot.isActive ? Color.green:Color.gray).frame(width:5,height:5);Text(model.snapshot.status).font(.caption)};Button{model.details.toggle()}label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).accessibilityLabel("连接设置")}
+        VStack(alignment:.leading,spacing:12){
+            HStack(alignment:.top){VStack(alignment:.leading,spacing:6){Text("eXTMonitor").font(.headline);Text("SONY XR-75X95EK · 75″").font(.caption).foregroundStyle(.secondary)};Spacer();HStack(spacing:5){Circle().fill(model.snapshot.isActive ? Color.green:Color.gray).frame(width:5,height:5);Text(model.snapshot.status).font(.caption)};Button{model.details.toggle()}label:{Image(systemName:"slider.horizontal.3")}.buttonStyle(.borderless).accessibilityLabel("连接设置")}
             HStack(spacing:4){ForEach([("sunshine","Sunshine"),("opendisplay","OpenDisplay"),("hdmi","HDMI")],id:\.0){m in Button{Task{await model.connect(m.0)}}label:{Text(m.1).font(.caption).frame(maxWidth:.infinity).padding(.vertical,9).background(model.snapshot.mode==m.0 ? Color.white.opacity(0.14):.clear,in:RoundedRectangle(cornerRadius:8))}.buttonStyle(.plain).disabled(model.busy)}}.padding(4).background(.black.opacity(0.18),in:RoundedRectangle(cornerRadius:12))
             HStack{Text(model.snapshot.mode=="hdmi" ? "HDMI 直连":"局域网 · \(model.snapshot.tv)");Spacer();Text("目标 4K60 · SDR")}.font(.caption2).foregroundStyle(.secondary)
-            LazyVGrid(columns:Array(repeating:GridItem(.flexible(),alignment:.leading),count:3),alignment:.leading,spacing:20){
+            LazyVGrid(columns:Array(repeating:GridItem(.flexible(),alignment:.leading),count:2),alignment:.leading,spacing:14){
                 metric("桌面分辨率",model.snapshot.resolution)
                 metric(model.snapshot.mode=="hdmi" ? "刷新率":"解码输出帧率",model.snapshot.mode=="hdmi" ? model.snapshot.refreshRate:model.snapshot.frameRate)
                 metric("网络往返",model.snapshot.mode=="hdmi" ? "不适用":model.snapshot.rtt)
                 metric("视频码率",model.snapshot.mode=="hdmi" ? "不适用":model.snapshot.bitrate)
-                metric("声音输出",model.snapshot.sound)
-                metric("屏幕位置",model.side=="right" ? "右侧":"左侧")
             }
-            if model.snapshot.mode=="opendisplay"{Text("Android Beta · 声音留在 Mac").font(.caption).foregroundStyle(.secondary)}
-            HStack{Text("音频输出").font(.caption).foregroundStyle(.secondary);Picker("音频输出",selection:Binding(get:{model.audio},set:{value in Task{await model.changeAudio(value)}})){Text("Mac").tag("mac");Text("电视").tag("tv").disabled(model.snapshot.mode=="opendisplay")}.labelsHidden().pickerStyle(.segmented).disabled(model.busy)}
-            if model.audio=="tv" && model.snapshot.mode=="sunshine" && AudioRouter.loopback==nil{Button("安装电视音频组件"){NSWorkspace.shared.open(URL(string:"https://existential.audio/blackhole/")!)}.font(.caption)}
+            if model.snapshot.mode=="opendisplay"{Text("此方案音频仅支持 Mac").font(.caption).foregroundStyle(.secondary)}
+            HStack{Text("音频输出").font(.caption).foregroundStyle(.secondary);Picker("音频输出",selection:Binding(get:{model.audio},set:{value in Task{await model.changeAudio(value)}})){Text("Mac").tag("mac");Text("电视").tag("tv").disabled(model.snapshot.mode=="opendisplay")}.labelsHidden().pickerStyle(.segmented).disabled(model.busy || model.snapshot.mode=="opendisplay")}
+            if model.audio=="tv" && model.snapshot.mode=="sunshine" && AudioRouter.loopback==nil{Button("安装电视音频组件"){Task{await model.installAudio()}}.font(.caption)}
             if !model.snapshot.error.isEmpty{Text(model.snapshot.error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)}
             Divider()
-            HStack{VStack(alignment:.leading,spacing:5){Text(model.snapshot.updated,style:.time).font(.caption2).foregroundStyle(.secondary);Button("方案记录"){model.comparison.toggle()}.font(.caption).buttonStyle(.borderless)};Spacer();if model.busy{ProgressView().controlSize(.small)};Button(model.snapshot.owned || model.snapshot.phase=="hdmi-active" ? "结束扩展":"开启扩展"){Task{if model.snapshot.owned || model.snapshot.phase=="hdmi-active"{await model.stop()}else{await model.connect(model.snapshot.mode)}}}.buttonStyle(.borderedProminent).tint(model.snapshot.isActive ? .gray:red).disabled(model.busy)}
+            HStack{VStack(alignment:.leading,spacing:5){Text(model.snapshot.updated,style:.time).font(.caption2).foregroundStyle(.secondary);};Spacer();if model.busy{ProgressView().controlSize(.small)};Button(model.snapshot.owned || model.snapshot.phase=="hdmi-active" ? "结束扩展":"开启扩展"){Task{if model.snapshot.owned || model.snapshot.phase=="hdmi-active"{await model.stop()}else{await model.connect(model.snapshot.mode)}}}.buttonStyle(.borderedProminent).tint(model.snapshot.isActive ? .gray:red).disabled(model.busy)}
+            if !model.setupMessage.isEmpty{Text(model.setupMessage).font(.caption2).foregroundStyle(.secondary)}
             if model.details{settings}
-            if model.comparison{comparison}
-        }.padding(24).frame(width:470).background(Frost()).background(Color.black.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius:24)).overlay(RoundedRectangle(cornerRadius:24).strokeBorder(.white.opacity(0.15))).preferredColorScheme(.dark)
+
+        }.padding(18).frame(width:380).background(Frost()).background(Color.black.opacity(0.15)).clipShape(RoundedRectangle(cornerRadius:24)).overlay(RoundedRectangle(cornerRadius:24).strokeBorder(.white.opacity(0.15))).preferredColorScheme(.dark)
     }
     func metric(_ title:String,_ value:String)->some View{VStack(alignment:.leading,spacing:7){Text(title).font(.caption2).foregroundStyle(.secondary);Text(value).font(.system(size:16,weight:.medium)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)}}
     var settings:some View {
         VStack(alignment:.leading,spacing:12){Divider();HStack{Text("电视 IP");TextField("192.168.1.100",text:$model.tv).textFieldStyle(.roundedBorder)}
+            Button("一键安装与检查"){Task{await model.installDependencies()}}.disabled(model.busy)
             Picker("屏幕位置",selection:Binding(get:{model.side},set:{model.changeSide($0)})){Text("左侧").tag("left");Text("右侧").tag("right")}.pickerStyle(.segmented)
             if model.snapshot.mode=="sunshine" {HStack{TextField("电视配对码",text:$model.pin).textFieldStyle(.roundedBorder);Button("配对"){Task{await model.pair()}}.disabled(model.busy || model.pin.count != 4)};Button("打开 Moonlight 配对页面"){Task{await model.openReceiver(pairing:true)}}}
             HStack{Button("录制权限"){NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)};Button("显示设置"){NSWorkspace.shared.open(URL(string:"x-apple.systempreferences:com.apple.Displays-Settings.extension")!)};Spacer()}
             HStack{Text("采集到解码 P50");Spacer();Text(model.snapshot.e2e)}.foregroundStyle(.secondary)
             HStack{Text("桌面刷新率");Spacer();Text(model.snapshot.refreshRate)}.foregroundStyle(.secondary)
-            HStack{Text("eXTMonitor · MIT");Spacer();Button("开源声明"){let alert=NSAlert();alert.messageText="eXTMonitor";alert.informativeText="自研控制面板、Widget 和电视入口：MIT License。\nOpenDisplay 电视适配：GPL-3.0，保留原项目版权。\nSunshine、Moonlight、SimpleDisplay、BlackHole 独立安装，遵循各自许可证。\nhttps://github.com/cnodon/eXTMonitor";alert.runModal()}}
+            HStack{Text("eXTMonitor · MIT");Button("退出"){Task{await model.stop();NSApp.terminate(nil)}};Spacer();Link("开源声明",destination:URL(string:"https://github.com/cnodon/eXTMonitor/blob/main/NOTICE.md")!)}
             Text("— 表示未采集；网络往返不是完整操作延迟。").font(.caption2).foregroundStyle(.secondary)
         }.font(.caption)
     }
     var comparison:some View {VStack(alignment:.leading,spacing:10){Divider();if model.history.isEmpty{Text("暂无会话记录").font(.caption).foregroundStyle(.secondary)};ForEach(Array(model.history.prefix(6).enumerated()),id:\.offset){_,s in HStack{Text(s.schemeName);Spacer();Text(s.mode=="hdmi" ? s.refreshRate:s.frameRate);Text(s.rtt)}.font(.caption)};Text("会话快照 · 不同方案的统计口径可能不同").font(.caption2).foregroundStyle(.secondary)}}
-}
-
-struct DesktopCard:View {
-    @ObservedObject var model:ConnectController
-    let open:()->Void
-    var body:some View {
-        VStack(alignment:.leading,spacing:14){
-            HStack{VStack(alignment:.leading,spacing:4){Text("eXTMonitor").font(.headline);Text("SONY XR-75X95EK").font(.caption2).foregroundStyle(.secondary)};Spacer();Button(action:open){Image(systemName:"slider.horizontal.3")}.buttonStyle(.plain).accessibilityLabel("打开控制面板")}
-            HStack{Circle().fill(model.snapshot.isActive ? Color.green:Color.gray).frame(width:5,height:5);Text(model.snapshot.stale ? "状态待刷新":model.snapshot.status);Spacer();Text(model.snapshot.mode=="hdmi" ? "HDMI":model.snapshot.tv)}.font(.caption2).foregroundStyle(.secondary)
-            HStack(spacing:4){ForEach([("sunshine","Sunshine"),("opendisplay","OpenDisplay"),("hdmi","HDMI")],id:\.0){m in Button{Task{await model.connect(m.0)}}label:{Text(m.1).font(.caption2).frame(maxWidth:.infinity).padding(.vertical,7).background(model.snapshot.mode==m.0 ? Color.white.opacity(0.14):.clear,in:RoundedRectangle(cornerRadius:6))}.buttonStyle(.plain).disabled(model.busy)}}
-            HStack{metric("桌面分辨率",model.snapshot.resolution);Spacer();metric(model.snapshot.mode=="hdmi" ? "刷新率":"解码帧率",model.snapshot.mode=="hdmi" ? model.snapshot.refreshRate:model.snapshot.frameRate)}
-            HStack{metric("网络往返",model.snapshot.mode=="hdmi" ? "—":model.snapshot.rtt);Spacer();metric("音频输出",model.snapshot.sound)}
-            HStack{Text(model.snapshot.updated,style:.time).font(.caption2).foregroundStyle(.secondary);Spacer();Button(model.snapshot.owned ? "结束扩展":"开启扩展"){Task{if model.snapshot.owned{await model.stop()}else{await model.connect(model.snapshot.mode)}}}.buttonStyle(.borderedProminent).tint(Color(red:0.8,green:0.16,blue:0.3)).disabled(model.busy)}
-        }.padding(20).frame(width:350).background(Frost()).clipShape(RoundedRectangle(cornerRadius:22)).overlay(RoundedRectangle(cornerRadius:22).strokeBorder(.white.opacity(0.12))).preferredColorScheme(.dark)
-    }
-    func metric(_ title:String,_ value:String)->some View{VStack(alignment:.leading,spacing:6){Text(title).font(.caption2).foregroundStyle(.secondary);Text(value).font(.system(size:16,weight:.medium)).monospacedDigit()}}
 }

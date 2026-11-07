@@ -27,7 +27,12 @@ ROOT = Path.home() / 'Library/Application Support/DDMM Connect'
 SUN = ROOT / 'Sunshine'
 STATE = ROOT / 'session.json'
 MODES = ('sunshine', 'opendisplay', 'hdmi')
-APPS = {'sunshine': '/Applications/Sunshine.app', 'opendisplay': '/Applications/OpenDisplay.app'}
+def installed_app(name):
+    system=Path('/Applications')/name
+    user=Path.home()/'Applications'/name
+    return str(system if system.exists() else user)
+
+APPS = {'sunshine': installed_app('Sunshine.app'), 'opendisplay': installed_app('OpenDisplay.app')}
 IDS = {'sunshine': 'dev.lizardbyte.app.Sunshine', 'opendisplay': 'com.peetzweg.opensidecar.mac'}
 RECEIVERS = {'sunshine': 'com.limelight', 'opendisplay': 'local.ddmm.opendisplay'}
 SERVICE = 'local.ddmm.connect.sunshine'
@@ -59,7 +64,7 @@ def validate_tv(value):
     return str(ip)
 
 def adb_path():
-    candidates = [shutil.which('adb'), str(Path.home()/'android-platform-tools/platform-tools/adb'),
+    candidates = [str(ROOT/'Tools/platform-tools/adb'),shutil.which('adb'), str(Path.home()/'android-platform-tools/platform-tools/adb'),
                   str(Path.home()/'Library/Android/sdk/platform-tools/adb')]
     return next((p for p in candidates if p and Path(p).is_file()), None)
 
@@ -92,7 +97,7 @@ def quit_owned(mode, state):
         if app_running(mode): raise RuntimeError('上一接收会话尚未退出，未启动新方案')
 
 def simple(url):
-    if not Path('/Applications/SimpleDisplay.app').is_dir():raise RuntimeError('SimpleDisplay 未安装')
+    if not Path(installed_app('SimpleDisplay.app')).is_dir():raise RuntimeError('SimpleDisplay 未安装')
     run(['/usr/bin/open',url])
 
 def displays():

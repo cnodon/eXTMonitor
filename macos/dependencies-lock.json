@@ -33,5 +33,25 @@
     "name": "SimpleDisplay.dmg",
     "url": "https://github.com/SamuelRioTz/SimpleDisplay/releases/download/v1.6.6/SimpleDisplay.dmg",
     "digest": "sha256:f97284e24c51a6ab11c0a3b9069d13077278651f6302273ea31d39fbd5de2158"
+  },
+  {
+    "name": "platform-tools_r37.0.2-darwin.zip",
+    "url": "https://dl.google.com/android/repository/platform-tools_r37.0.2-darwin.zip",
+    "digest": "sha256:de86d62321ad38049d488fb1854c7b9a29f7e1b17e8dfb597c304b038cc37ae7"
+  },
+  {
+    "name": "eXTMonitor-TV-0.1.0.apk",
+    "url": "https://github.com/cnodon/eXTMonitor/releases/download/v0.2.0/eXTMonitor-TV-0.1.0.apk",
+    "digest": "sha256:9b54cc6a2af3c5819a30daadd58403b9847af869f96fe7af12921bb89f8117f2"
+  },
+  {
+    "name": "DDMM-OpenDisplay-1.30.2-ddmm.1.apk",
+    "url": "https://github.com/cnodon/eXTMonitor/releases/download/v0.2.0/DDMM-OpenDisplay-1.30.2-ddmm.1.apk",
+    "digest": "sha256:f28a0d889663f665b114eb0ef7461ff96c458d9c580b6a9cea81dec2374ed966"
+  },
+  {
+    "name": "BlackHole2ch-0.7.1.pkg",
+    "url": "https://existential.audio/downloads/BlackHole2ch-0.7.1.pkg",
+    "digest": "sha256:57b540f27a3e29c37e310e01bee0fdfab76733087e47f997ef9dccf851400dcf"
   }
 ]
