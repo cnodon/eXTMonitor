@@ -1,0 +1,131 @@
+diff --git a/Android/app/build.gradle.kts b/Android/app/build.gradle.kts
+index f943c40..ee6c7b8 100644
+--- a/Android/app/build.gradle.kts
++++ b/Android/app/build.gradle.kts
+@@ -8,7 +8,7 @@ android {
+     compileSdk = 36
+ 
+     defaultConfig {
+-        applicationId = "com.peetzweg.opendisplay"
++        applicationId = "local.ddmm.opendisplay"
+         // Google Play rejects bundles below API 24 (its automatic protection
+         // requires it), so Play builds pass -PappMinSdk=24. The GitHub APK
+         // keeps 21 for Android 5 and 6 devices.
+@@ -27,7 +27,7 @@ android {
+         }
+         release {
+             isMinifyEnabled = false
+-            resValue("string", "app_name", "OpenDisplay")
++            resValue("string", "app_name", "eXTMonitor Receiver")
+         }
+     }
+ 
+diff --git a/Android/app/src/main/AndroidManifest.xml b/Android/app/src/main/AndroidManifest.xml
+index e0e8027..4f0f0dd 100644
+--- a/Android/app/src/main/AndroidManifest.xml
++++ b/Android/app/src/main/AndroidManifest.xml
+@@ -10,6 +10,8 @@
+     <!-- Wired from a Mac without adb: Android Open Accessory (AOA). -->
+     <uses-feature android:name="android.hardware.usb.accessory" android:required="false" />
+ 
++    <uses-feature android:name="android.software.leanback" android:required="false" />
++    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+     <application
+         android:allowBackup="false"
+         android:icon="@mipmap/ic_launcher"
+@@ -23,10 +25,11 @@
+             android:exported="true"
+             android:launchMode="singleTask"
+             android:resizeableActivity="true"
+-            android:screenOrientation="fullUser">
++            android:screenOrientation="landscape">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+                 <category android:name="android.intent.category.LAUNCHER" />
++                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+             </intent-filter>
+             <!-- The Mac switched us into accessory mode: launch and take it. -->
+             <intent-filter>
+diff --git a/Android/app/src/main/java/app/opendisplay/android/ui/IdleView.kt b/Android/app/src/main/java/app/opendisplay/android/ui/IdleView.kt
+index 72f1955..15894b1 100644
+--- a/Android/app/src/main/java/app/opendisplay/android/ui/IdleView.kt
++++ b/Android/app/src/main/java/app/opendisplay/android/ui/IdleView.kt
+@@ -23,6 +23,7 @@ import com.google.android.material.color.MaterialColors
+  * built from Material components in the system's light or dark theme.
+  */
+ class IdleView(context: Context, kind: String, onSettings: () -> Unit) : ScrollView(context) {
++    private val television = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+     private val dot = View(context)
+     private val status = TextView(context)
+ 
+@@ -41,7 +42,7 @@ class IdleView(context: Context, kind: String, onSettings: () -> Unit) : ScrollV
+         column.padToSafeArea()
+ 
+         column.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
+-        column.addView(ImageView(context).apply { setImageResource(R.drawable.app_logo) },
++        if (!television) column.addView(ImageView(context).apply { setImageResource(R.drawable.app_logo) },
+             LinearLayout.LayoutParams(dp(132), dp(132)).apply { bottomMargin = dp(24) })
+         column.addView(text(R.string.title, com.google.android.material.R.attr.textAppearanceHeadlineMedium,
+             com.google.android.material.R.attr.colorOnSurface), LinearLayout.LayoutParams(WRAP, WRAP))
+@@ -69,15 +70,15 @@ class IdleView(context: Context, kind: String, onSettings: () -> Unit) : ScrollV
+         hints.addView(hint(R.drawable.ic_play, context.getString(R.string.hint_keep_open)))
+         val card = MaterialCardView(ContextThemeWrapper(context,
+             com.google.android.material.R.style.Widget_Material3_CardView_Filled)).apply { addView(hints) }
+-        column.addView(card, LinearLayout.LayoutParams(minOf(dp(420), screenWidth() - dp(32)), WRAP))
++        if (!television) column.addView(card, LinearLayout.LayoutParams(minOf(dp(420), screenWidth() - dp(32)), WRAP))
+ 
+         column.addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
+         column.addView(MaterialButton(ContextThemeWrapper(context,
+             com.google.android.material.R.style.Widget_Material3_Button_TonalButton)).apply {
+-            text = context.getString(R.string.settings_and_help)
++            text = if (television) "设置" else context.getString(R.string.settings_and_help)
+             setOnClickListener { onSettings() }
+         }, LinearLayout.LayoutParams(WRAP, WRAP).apply { topMargin = dp(24) })
+-        column.addView(TextView(context).apply {
++        if (!television) column.addView(TextView(context).apply {
+             text = context.getString(R.string.shake_tip, kind)
+             androidx.core.widget.TextViewCompat.setTextAppearance(this, attrRes(com.google.android.material.R.attr.textAppearanceBodySmall))
+             setTextColor(color(com.google.android.material.R.attr.colorOutline))
+@@ -86,7 +87,7 @@ class IdleView(context: Context, kind: String, onSettings: () -> Unit) : ScrollV
+     }
+ 
+     fun setStatus(text: String, connected: Boolean) {
+-        status.text = text
++        status.text = if (television && text == context.getString(R.string.status_waiting_picture)) "已连接 · 等待画面" else if (television && text == context.getString(R.string.status_ready)) "等待 Mac 连接" else text
+         dot.background = GradientDrawable().apply {
+             shape = GradientDrawable.OVAL
+             setColor(if (connected) GREEN else ORANGE)
+diff --git a/Android/app/src/main/java/app/opendisplay/android/ui/MainActivity.kt b/Android/app/src/main/java/app/opendisplay/android/ui/MainActivity.kt
+index 92208ed..b311038 100644
+--- a/Android/app/src/main/java/app/opendisplay/android/ui/MainActivity.kt
++++ b/Android/app/src/main/java/app/opendisplay/android/ui/MainActivity.kt
+@@ -119,6 +119,7 @@ class MainActivity : AppCompatActivity(), ReceiverServer.Listener, VideoDecoder.
+         nightMode = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+         Log.init(this)
+         prefs = AppPrefs(this)
++        if ((resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION) { prefs.onboardingDismissed = true; prefs.showAnalytics = false }
+         shake = ShakeDetector(this) { showSettings() }
+         installId = DeviceIdentity.installId(this)
+         wifiLock = createWifiLock()
+@@ -422,7 +423,20 @@ class MainActivity : AppCompatActivity(), ReceiverServer.Listener, VideoDecoder.
+             w = size.x
+             h = size.y
+         }
+-        val next = Panel(w, h, (metrics.density * 1000).roundToInt() / 1000.0)
++        // DDMM TV: Android HOME may be 1080p while the video Surface supports 4K.
++        val television = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
++        if (television && Build.VERSION.SDK_INT >= 23) {
++            @Suppress("DEPRECATION")
++            val mode = windowManager.defaultDisplay.supportedModes
++                .filter { it.physicalWidth == 3840 && it.physicalHeight == 2160 && it.refreshRate >= 59f }
++                .minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
++            if (mode != null) {
++                w = mode.physicalWidth; h = mode.physicalHeight
++                window.attributes = window.attributes.also { it.preferredDisplayModeId = mode.modeId }
++                surfaceView.holder.setFixedSize(w, h)
++            }
++        }
++        val next = Panel(w, h, if (television) 2.0 else (metrics.density * 1000).roundToInt() / 1000.0)
+         deviceKind = DeviceIdentity.deviceKind(this)
+         displayMaxFrameRate = maxRefreshRate()
+         if (next == panel) return

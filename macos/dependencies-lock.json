@@ -1,0 +1,37 @@
+[
+  {
+    "repo": "LizardByte/Sunshine",
+    "tag": "v2026.914.233613",
+    "name": "Sunshine-macOS-arm64.dmg",
+    "url": "https://github.com/LizardByte/Sunshine/releases/download/v2026.914.233613/Sunshine-macOS-arm64.dmg",
+    "digest": "sha256:795f03a389c5726f9a7b15f501dc1ddf204b442cae565859ac83aae027a9e07c"
+  },
+  {
+    "repo": "moonlight-stream/moonlight-android",
+    "tag": "v12.2",
+    "name": "app-nonRoot-release.apk",
+    "url": "https://github.com/moonlight-stream/moonlight-android/releases/download/v12.2/app-nonRoot-release.apk",
+    "digest": "sha256:a871f6190365386ef3ac5722a016d4da015ee1555631ec257f6e5dc3f4a45fe0"
+  },
+  {
+    "repo": "peetzweg/opendisplay",
+    "tag": "v1.30.2",
+    "name": "OpenDisplay-Android.apk",
+    "url": "https://github.com/peetzweg/opendisplay/releases/download/v1.30.2/OpenDisplay-Android.apk",
+    "digest": "sha256:1c90a6894a0cc3b59327067c5cd8609d06d6d4ae6535edab2a0243df8cd479ed"
+  },
+  {
+    "repo": "peetzweg/opendisplay",
+    "tag": "v1.30.2",
+    "name": "OpenDisplay.dmg",
+    "url": "https://github.com/peetzweg/opendisplay/releases/download/v1.30.2/OpenDisplay.dmg",
+    "digest": "sha256:8f48236e7a3e403e528afe3f03a2877806d754665976a65b92118db81c53d4fe"
+  },
+  {
+    "repo": "SamuelRioTz/SimpleDisplay",
+    "tag": "v1.6.6",
+    "name": "SimpleDisplay.dmg",
+    "url": "https://github.com/SamuelRioTz/SimpleDisplay/releases/download/v1.6.6/SimpleDisplay.dmg",
+    "digest": "sha256:f97284e24c51a6ab11c0a3b9069d13077278651f6302273ea31d39fbd5de2158"
+  }
+]

@@ -1,0 +1,8 @@
+output/
+.DS_Store
+__pycache__/
+*.pyc
+*.keystore
+*.p12
+*.mobileprovision
+.env*
